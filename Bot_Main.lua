@@ -1,7 +1,7 @@
 -- ==========================================
 -- CẤU HÌNH WEBHOOK (Điền link của cậu vào đây)
 -- ==========================================
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1524046777504895017/c3PJMK19okyD56aV81tcoYqs6bBEzChNcmOB_ZKQ5th556xbHAP7AErseZFby46BajO8"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1524249194657742859/mvf4OxcYgB8qNNJVYjGxwW_ZAN5PA9f5Mb6kma5R8MhvrXPbcwh6KBuCE2E5k7KuQHOs"
 
 -- 1. Chờ game load
 if not game:IsLoaded() then
@@ -144,3 +144,62 @@ sendStartup()
 onWeatherChanged()
 
 workspace:GetAttributeChangedSignal("ActiveWeather"):Connect(onWeatherChanged)
+
+---------Dự Báo thời tiết 
+local CYCLE_TIME = 600 -- 10 phút
+
+local MoonTable = {
+    {Name = "Moon", Chance = 79, Icon = "🌕"},
+    {Name = "Bloodmoon", Chance = 2, Icon = "🔴"},
+    {Name = "Goldmoon", Chance = 13, Icon = "🪙"},
+    {Name = "Rainbow Moon", Chance = 6, Icon = "🌈"},
+    {Name = "Mega Moon", Chance = 2, Icon = "💥"},
+}
+
+local function PickMoon(rng)
+    local total = 0
+
+    for _, moon in ipairs(MoonTable) do
+        total += moon.Chance
+    end
+
+    local roll = rng:NextNumber() * total
+    local current = 0
+
+    for _, moon in ipairs(MoonTable) do
+        current += moon.Chance
+        if roll <= current then
+            return moon
+        end
+    end
+
+    return MoonTable[1]
+end
+
+local function Predict(hours)
+    hours = hours or 24
+
+    local now = os.time()
+    local finish = now + hours * 3600
+
+    print("========== KYZEN MOON PREDICT ==========")
+
+    for t = now, finish, CYCLE_TIME do
+
+        local cycleID = math.floor(t / CYCLE_TIME)
+        local seed = cycleID * 1000 + 3
+
+        local moon = PickMoon(Random.new(seed))
+
+        print(string.format(
+            "%s %s %s",
+            os.date("%H:%M", t),
+            moon.Icon,
+            moon.Name
+        ))
+    end
+
+    print("========================================")
+end
+
+Predict(24)
