@@ -145,61 +145,176 @@ onWeatherChanged()
 
 workspace:GetAttributeChangedSignal("ActiveWeather"):Connect(onWeatherChanged)
 
----------Dự Báo thời tiết 
-local CYCLE_TIME = 600 -- 10 phút
+------ Dự báo
+--==============================
+-- KYZEN Moon Predictor
+--==============================
 
-local MoonTable = {
-    {Name = "Moon", Chance = 79, Icon = "🌕"},
-    {Name = "Bloodmoon", Chance = 2, Icon = "🔴"},
-    {Name = "Goldmoon", Chance = 13, Icon = "🪙"},
-    {Name = "Rainbow Moon", Chance = 6, Icon = "🌈"},
-    {Name = "Mega Moon", Chance = 2, Icon = "💥"},
+local CYCLE_TIME = 600 -- 10 phút
+local NIGHT_ORDER = 3
+
+local RareMoons = {
+    ["Bloodmoon"] = {Icon="🔴"},
+    ["Goldmoon"] = {Icon="🪙"},
+    ["Rainbow Moon"] = {Icon="🌈"},
+    ["Mega Moon"] = {Icon="💥"},
 }
 
-local function PickMoon(rng)
-    local total = 0
+local MoonTable = {
+    {Name="Moon",Chance=79},
+    {Name="Bloodmoon",Chance=2},
+    {Name="Goldmoon",Chance=13},
+    {Name="Rainbow Moon",Chance=6},
+    {Name="Mega Moon",Chance=2},
+}
 
-    for _, moon in ipairs(MoonTable) do
-        total += moon.Chance
+local function PickMoon(seed)
+    local rng=Random.new(seed)
+
+    local total=0
+    for _,v in ipairs(MoonTable) do
+        total+=v.Chance
     end
 
-    local roll = rng:NextNumber() * total
-    local current = 0
+    local roll=rng:NextNumber()*total
 
-    for _, moon in ipairs(MoonTable) do
-        current += moon.Chance
-        if roll <= current then
-            return moon
+    local current=0
+    for _,v in ipairs(MoonTable) do
+        current+=v.Chance
+        if roll<=current then
+            return v.Name
         end
     end
 
-    return MoonTable[1]
+    return "Moon"
 end
 
-local function Predict(hours)
-    hours = hours or 24
+local Predicted = {}
+
+local function BuildPrediction(hours)
+
+    table.clear(Predicted)
 
     local now = os.time()
-    local finish = now + hours * 3600
 
-    print("========== KYZEN MOON PREDICT ==========")
+    -- Canh đúng mốc cycle 10 phút
+    local first = now - (now % CYCLE_TIME)
 
-    for t = now, finish, CYCLE_TIME do
+    local finish = first + (hours * 3600)
+
+    for t = first, finish, CYCLE_TIME do
 
         local cycleID = math.floor(t / CYCLE_TIME)
-        local seed = cycleID * 1000 + 3
 
-        local moon = PickMoon(Random.new(seed))
+        local moon = PickMoon(cycleID * 1000 + NIGHT_ORDER)
 
-        print(string.format(
-            "%s %s %s",
-            os.date("%H:%M", t),
-            moon.Icon,
-            moon.Name
-        ))
+        if RareMoons[moon] then
+
+            table.insert(Predicted,{
+                Name = moon,
+                Icon = RareMoons[moon].Icon,
+                Time = t,
+                Warned = false
+            })
+
+        end
+
     end
 
-    print("========================================")
+    -- Gửi dự báo lên Discord
+    local text = ""
+
+    for _,v in ipairs(Predicted) do
+
+        text ..= string.format(
+            "%s %s %s\n",
+            os.date("%H:%M", v.Time),
+            v.Icon,
+            v.Name
+        )
+
+    end
+
+    sendDiscord({
+        title = "🌙 Moon Prediction (24h)",
+        description = text
+    })
+
 end
 
-Predict(24)
+print("======================================")
+
+----- thông báo
+BuildPrediction(24)
+
+task.spawn(function()
+
+    while true do
+
+        local now = os.time()
+
+        for _,moon in ipairs(Predicted) do
+
+            local remain = moon.Time - now
+
+            if remain <= 300
+            and remain > 0
+            and not moon.Warned then
+
+                moon.Warned = true
+
+                sendNotification(string.format(
+                    "⚠️ %s sẽ xuất hiện sau %d phút!",
+                    moon.Name,
+                    math.ceil(remain / 60)
+                ))
+
+            end
+
+        end
+
+        task.wait(1)
+
+    end
+
+end)
+
+task.spawn(function()
+
+    while true do
+
+        local waitTime = CYCLE_TIME - (os.time() % CYCLE_TIME)
+
+        task.wait(waitTime + 1)
+
+        BuildPrediction(24)
+
+    end
+
+end)
+
+local LastWeather = nil
+
+workspace:GetAttributeChangedSignal("ActiveWeather"):Connect(function()
+
+    local weather = workspace:GetAttribute("ActiveWeather")
+
+    if weather == LastWeather then
+        return
+    end
+
+    LastWeather = weather
+
+    if weather == "Bloodmoon"
+    or weather == "Goldmoon"
+    or weather == "Rainbow Moon"
+    or weather == "Mega Moon" then
+
+        sendDiscord({
+            title = "🌙 Moon Started",
+            description = weather
+        })
+
+    end
+
+end)
