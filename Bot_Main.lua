@@ -37,6 +37,7 @@ local Icons = {
     ["Mega Moon"] = "💥🌕"
 }
 
+-- Hàm gửi tin nhắn khởi động
 local function sendStartup()
     local startupData = {
         content = "🟢 **KYZEN Mutation Tracker Online**\nScript đã khởi động thành công."
@@ -58,6 +59,30 @@ local function sendStartup()
     end
 end
 
+-- ==========================================
+-- ✅ ĐÃ BỔ SUNG: Hàm sendDiscord dùng chung cho Dự báo
+-- ==========================================
+local function sendDiscord(embedData)
+    local requestFunc = request or http_request or (syn and syn.request)
+    if not requestFunc or WEBHOOK_URL == "" then return end
+
+    pcall(function()
+        requestFunc({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode({
+                embeds = {{
+                    title = embedData.title,
+                    description = embedData.description,
+                    color = tonumber(0xFF3B3B)
+                }}
+            })
+        })
+    end)
+end
+
+-- Hàm gửi thông báo thời tiết
 local function sendNotification(weather)
     if WEBHOOK_URL == "" or WEBHOOK_URL == "THÊM_LINK_WEBHOOK_DISCORD_CỦA_CẬU_VÀO_ĐÂY" then
         warn("[Kyzen] Cậu quên chưa điền Link Webhook kìa!")
@@ -66,15 +91,14 @@ local function sendNotification(weather)
 
     local currentTime = os.date("%H:%M:%S")
     
-    -- Lấy icon tương ứng, nếu event lạ không có trong bảng thì dùng icon mặc định 🔔
     local eventIcon = Icons[weather] or "🔔"
 
     local webhookData = {
         ["content"] = "", 
         ["embeds"] = {{
-            ["title"] = eventIcon .. " " .. tostring(weather), -- ✅ Đã gắn icon vào Title
+            ["title"] = eventIcon .. " " .. tostring(weather), 
             ["description"] = "Phát hiện thay đổi thời tiết!",
-            ["color"] = tonumber(0xFF3B3B), -- ✅ Cập nhật #3: Đổi sang màu đỏ 
+            ["color"] = tonumber(0xFF3B3B), 
             ["fields"] = {
                 {
                     ["name"] = "Sự kiện (Event)",
@@ -111,9 +135,7 @@ local function sendNotification(weather)
         end
     end)
 
-    -- ✅ Cập nhật #1: Kiểm tra response xem Discord có thực sự nhận thành công hay không
     if success and response then
-        -- HTTP code 2xx nghĩa là request thành công
         if response.Success or (response.StatusCode and response.StatusCode >= 200 and response.StatusCode < 300) then
             print("[Kyzen] Discord Sent. Đã báo:", weather, "lúc", currentTime)
         else
@@ -139,16 +161,14 @@ local function onWeatherChanged()
     sendNotification(weather)
 end
 
+-- Chạy thử các hàm ngay khi load
 sendStartup()
-
 onWeatherChanged()
-
 workspace:GetAttributeChangedSignal("ActiveWeather"):Connect(onWeatherChanged)
 
------- Dự báo
---==============================
+-- ==============================
 -- KYZEN Moon Predictor
---==============================
+-- ==============================
 
 local CYCLE_TIME = 600 -- 10 phút
 local NIGHT_ORDER = 3
@@ -225,15 +245,15 @@ local function BuildPrediction(hours)
     local text = ""
 
     for _,v in ipairs(Predicted) do
-
         text ..= string.format(
             "%s %s %s\n",
             os.date("%H:%M", v.Time),
             v.Icon,
             v.Name
         )
-
     end
+
+    if text == "" then text = "Không có Event Rare nào trong 24h tới." end
 
     sendDiscord({
         title = "🌙 Moon Prediction (24h)",
@@ -244,23 +264,17 @@ end
 
 print("======================================")
 
------ thông báo
 BuildPrediction(24)
 
+-- Vòng lặp báo trước 5 phút
 task.spawn(function()
-
     while true do
-
         local now = os.time()
 
         for _,moon in ipairs(Predicted) do
-
             local remain = moon.Time - now
 
-            if remain <= 300
-            and remain > 0
-            and not moon.Warned then
-
+            if remain <= 300 and remain > 0 and not moon.Warned then
                 moon.Warned = true
 
                 sendNotification(string.format(
@@ -268,53 +282,18 @@ task.spawn(function()
                     moon.Name,
                     math.ceil(remain / 60)
                 ))
-
             end
-
         end
 
         task.wait(1)
-
     end
-
 end)
 
+-- Vòng lặp cập nhật dự báo
 task.spawn(function()
-
     while true do
-
         local waitTime = CYCLE_TIME - (os.time() % CYCLE_TIME)
-
         task.wait(waitTime + 1)
-
         BuildPrediction(24)
-
     end
-
-end)
-
-local LastWeather = nil
-
-workspace:GetAttributeChangedSignal("ActiveWeather"):Connect(function()
-
-    local weather = workspace:GetAttribute("ActiveWeather")
-
-    if weather == LastWeather then
-        return
-    end
-
-    LastWeather = weather
-
-    if weather == "Bloodmoon"
-    or weather == "Goldmoon"
-    or weather == "Rainbow Moon"
-    or weather == "Mega Moon" then
-
-        sendDiscord({
-            title = "🌙 Moon Started",
-            description = weather
-        })
-
-    end
-
 end)
